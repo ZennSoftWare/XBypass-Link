@@ -11,6 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<link rel="preload" href="assets/fonts/Pervitina-Dex-FFP.otf" as="font" type="font/otf" crossorigin>
 <link rel="stylesheet" href="style.css">
 <script type="module" src="script.js"></script>
 </head>
@@ -57,19 +58,19 @@
   <noscript><p class="ns">Aktifkan JavaScript untuk memakai XBypass.</p></noscript>
 
   <section class="hero" aria-labelledby="judul">
-    <h1 id="judul"><span class="bw">XBypass</span> <span class="tg">Link dalam hitungan detik</span></h1>
+    <h1 id="judul"><span class="bw">XBypass</span> <span class="tg">Link dalam <em>hitungan detik</em></span></h1>
     <p>Tempel link yang mau di bypass, lalu tekan bypass, hasil tujuan aslinya akan langsung muncul.</p>
   </section>
 
   <!-- Execution panel -->
   <section id="proses" class="card" aria-labelledby="t-proses">
-    <div class="ph">
+    <div class="ph sr">
       <h2 id="t-proses">Proses Bypass</h2>
       <span id="pstate" class="ps" data-s="idle"><i></i><b>Siap</b></span>
     </div>
 
     <ol id="stages" class="stages" aria-label="Tahapan proses"></ol>
-    <p id="chain" class="chain" aria-hidden="true"></p>
+    <p id="status" class="status"></p>
 
     <form id="form" novalidate autocomplete="off">
       <div class="field" id="field">
