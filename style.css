@@ -5,7 +5,7 @@
 @font-face{font-family:'Pervitina Dex';src:url('assets/fonts/Pervitina-Dex-FFP.otf') format('opentype'),url('assets/fonts/Pervitina-Dex-FFP.ttf') format('truetype');font-weight:400;font-style:normal;font-display:swap}
 
 :root{--bg:#000;--c1:#0a0a0c;--c2:#111114;--c3:#18181c;--ln:#232328;--ln2:#33343b;--tx:#f4f4f5;--sv:#c3c7cd;--t2:#8b8e96;--t3:#5a5d65;--ice:#e6ebf1;--rd:#e5484d;--rd2:#e0696e;--rad:8px;
---ease-spring:cubic-bezier(0.34,1.56,0.64,1);--ease-fluid:cubic-bezier(0.25,1,0.5,1);--ease:var(--ease-fluid);
+--ease-motion:cubic-bezier(.16,1,.3,1);--ease-spring:cubic-bezier(0.34,1.56,0.64,1);--ease-fluid:cubic-bezier(0.25,1,0.5,1);--ease:var(--ease-fluid);
 --sans:'Geist',system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
 --mono:'Geist Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
 --brand:'Pervitina Dex',ui-sans-serif,system-ui,sans-serif;color-scheme:dark}
@@ -161,7 +161,7 @@ main>#didukung,main>#cara{margin-top:56px}
 .step p{font-size:13.5px;color:var(--t2);line-height:1.55}
 
 /* footer */
-.foot{margin-top:64px;padding:26px 0 calc(26px + env(safe-area-inset-bottom,0));border-top:1px solid var(--ln);text-align:center;font-size:12px;color:var(--t3)}
+.foot{overflow:clip;margin-top:64px;padding:26px 0 calc(26px + env(safe-area-inset-bottom,0));border-top:1px solid var(--ln);text-align:center;font-size:12px;color:var(--t3)}
 .fs{display:inline-flex;align-items:center;gap:8px;font:400 12px var(--mono)}
 .fs i{width:6px;height:6px;border-radius:50%;background:var(--t3);flex:none;transition:background .4s}
 .fs[data-s=ok] i{background:var(--ice)}
@@ -179,10 +179,19 @@ main>#didukung,main>#cara{margin-top:56px}
 @media(min-width:640px){.card{padding:26px}}
 @media(max-width:519px){.steps{grid-template-columns:1fr}}
 @media(max-width:360px){.ib .lbs{display:none}.ib{padding:0 11px}}
+/* ===== Motion system: initial assembly + bidirectional scroll reveal =====
+   Dikendalikan script.js (initMotion). Hanya memakai opacity, translate, scale.
+   Tanpa JS tidak ada elemen yang disembunyikan. */
+html.hld header,html.hld .hero>*,html.hld #proses,html.hld #hasil,html.hld #didukung .sh,html.hld #mqs,html.hld #cara .sh,html.hld .step,html.hld .foot>.w{opacity:0}
+.rv{transition:opacity .85s var(--ease-motion) var(--d,0ms),translate .85s var(--ease-motion) var(--d,0ms),scale .85s var(--ease-motion) var(--d,0ms)}
+.rv.rv-off{opacity:0;translate:0 var(--ry,40px);scale:.92;transition-duration:.55s;transition-delay:0ms}
+.rv.rv-nt{transition:none!important}
+.tab-hidden *,.tab-hidden *::before,.tab-hidden *::after{animation-play-state:paused!important}
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;transition-delay:0s!important}
   html{scroll-behavior:auto}
   .go::after{display:none}
+  .rv,.rv.rv-off{opacity:1!important;translate:none!important;scale:none!important;transition:none!important}
   .mq .track{animation:none!important}
   .mq{overflow-x:auto;-webkit-mask-image:none;mask-image:none}
   .stage[data-s=busy] .sq::after{animation:none!important}
