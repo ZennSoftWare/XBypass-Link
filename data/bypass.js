@@ -72,7 +72,7 @@ export const BYPASS_PROVIDERS = [
     domains: ["sub4unlock.pro"],
     endpoint: "/api/bypass-sub4unlock-pro",
     processingLabel: "Sub4Unlock-pro",
-    icon: "/assets/logo-bypass/sub4unlock-pro.webp",
+    icon: "/assets/logo-bypass/sub4unlock-pro.png",
     enabled: true
   },
   {
