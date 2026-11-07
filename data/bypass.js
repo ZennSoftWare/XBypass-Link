@@ -49,10 +49,19 @@ export const BYPASS_PROVIDERS = [
     enabled: true
   },
   {
-    id: "sub4unlock",
+    id: "sub4unlock-id",
+    name: "Sub4unlock.com",
+    domains: ["sub4unlock.com"],
+    endpoint: "/api/bypass-sub4unlock-id",
+    processingLabel: "Sub4Unlock",
+    icon: "/assets/logo-bypass/sub4unlock-id.png",
+    enabled: true
+  },
+  {
+    id: "sub4unlock-com",
     name: "Sub4Unlock.com",
     domains: ["sub4unlock.com"],
-    endpoint: "/api/bypass-sub4unlock",
+    endpoint: "/api/bypass-sub4unlock-com",
     processingLabel: "Sub4Unlock",
     icon: "/assets/logo-bypass/sub4unlock.png",
     enabled: true
