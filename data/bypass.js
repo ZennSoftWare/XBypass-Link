@@ -4,7 +4,7 @@
 
 export const BYPASS_PROVIDERS = [
   {
-    id: "sub2unlock.me",
+    id: "sub2unlock",
     name: "Sub2Unlock.me",
     domains: ["sub2unlock.me"],
     endpoint: "/api/bypass-sub2unlock",
@@ -13,21 +13,30 @@ export const BYPASS_PROVIDERS = [
     enabled: true
   },
   {
-    id: "sub4unlock",
-    name: "Sub4Unlock",
-    domains: ["sub4unlock.pro", "sub4unlock.id", "sub4unlock.com"],
-    endpoint: "/api/bypass-sub4unlock",
-    processingLabel: "Sub4Unlock",
-    icon: "/assets/logo-bypass/sub4unlock.png",
+    id: "pastelink",
+    name: "pastelink.net",
+    domains: ["pastelink.net"],
+    endpoint: "/api/bypass-pastelink",
+    processingLabel: "Pastelink",
+    icon: "/assets/logo-bypass/pastelink.png",
     enabled: true
   },
   {
-    id: "sfl",
+    id: "shrinkme",
+    name: "shrinkme.io",
+    domains: ["shrinkme.io"],
+    endpoint: "/api/bypass-shrinkme",
+    processingLabel: "Shrinkme",
+    icon: "/assets/logo-bypass/shrinkme.webp",
+    enabled: true
+  },
+  {
+    id: "safelinku",
     name: "SFL",
-    domains: ["sfl.gl"],
+    domains: ["safelinku.com"],
     endpoint: "/api/bypass-sfl",
-    processingLabel: "Safelink",
-    icon: "/assets/logo-bypass/sfl.png",
+    processingLabel: "Safelinku",
+    icon: "/assets/logo-bypass/safelinku.png",
     enabled: true
   },
   {
@@ -39,24 +48,6 @@ export const BYPASS_PROVIDERS = [
     icon: "/assets/logo-bypass/linkvertise.png",
     enabled: true
   },
-  {
-    id: "shrinkme",
-    name: "ShrinkMe",
-    domains: ["shrinkme.click"],
-    endpoint: "/api/bypass-shrinkme",
-    processingLabel: "ShrinkMe",
-    icon: "/assets/logo-bypass/shrinkme.png",
-    enabled: true
-  },
-  {
-    id: "paste",
-    name: "Paste",
-    domains: ["paste.link", "pastelink.net"],
-    endpoint: "/api/bypass-paste",
-    processingLabel: "Paste Link",
-    icon: "/assets/logo-bypass/paste.png",
-    enabled: true
-  }
 ];
 
 /* Lima tahapan. {provider} diganti processingLabel provider yang cocok. */
