@@ -27,7 +27,7 @@ export const BYPASS_PROVIDERS = [
     domains: ["shrinkme.io"],
     endpoint: "/api/bypass-shrinkme",
     processingLabel: "Shrinkme",
-    icon: "/assets/logo-bypass/shrinkme.webp",
+    icon: "/assets/logo-bypass/shrinkme.jpg",
     enabled: true
   },
   {
