@@ -4,9 +4,9 @@
 
 export const BYPASS_PROVIDERS = [
   {
-    id: "sub2unlock",
-    name: "Sub2Unlock",
-    domains: ["sub2unlock.com", "sub2unlock.me", "sub2unlock.io"],
+    id: "sub2unlock.me",
+    name: "Sub2Unlock.me",
+    domains: ["sub2unlock.me"],
     endpoint: "/api/bypass-sub2unlock",
     processingLabel: "Sub2Unlock",
     icon: "/assets/logo-bypass/sub2unlock.png",
