@@ -9,7 +9,7 @@ export const BYPASS_PROVIDERS = [
     domains: ["sub2unlock.me"],
     endpoint: "/api/bypass-sub2unlock",
     processingLabel: "Sub2Unlock",
-    icon: "/assets/logo-bypass/sub2unlock.png",
+    icon: "/assets/logo-bypass/sub2unlock.webp",
     enabled: true
   },
   {
@@ -46,6 +46,15 @@ export const BYPASS_PROVIDERS = [
     endpoint: "/api/bypass-linkvertise",
     processingLabel: "Linkvertise",
     icon: "/assets/logo-bypass/linkvertise.png",
+    enabled: true
+  },
+  {
+    id: "sub4unlock",
+    name: "Sub4Unlock.com",
+    domains: ["sub4unlock.com"],
+    endpoint: "/api/bypass-sub4unlock",
+    processingLabel: "Sub4Unlock",
+    icon: "/assets/logo-bypass/sub4unlock.png",
     enabled: true
   },
 ];
