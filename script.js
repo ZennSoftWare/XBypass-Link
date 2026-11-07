@@ -525,6 +525,126 @@ function initLogo() {
 }
 
 /* ============================================================
+   Motion controller: initial assembly + bidirectional scroll reveal
+   Prinsip dari referensi (asm / fly / play / place / startRv):
+   - assembly: elemen terbang dari satu titik asal ke posisinya, stagger ~65ms
+   - reveal  : IntersectionObserver + arah scroll (listener pasif), tanpa baca posisi tiap event scroll
+   - anti-flicker: histeresis (tampil >=15%, sembunyi <=5%) + jeda minimal sebelum boleh disembunyikan
+   ============================================================ */
+function initMotion() {
+  const root = document.documentElement;
+  const EASE = 'cubic-bezier(.16,1,.3,1)';
+  const UNITS = 'header,.hero>*,#proses,#hasil,#didukung .sh,#mqs,#cara .sh,.step,.foot>.w';
+  const KIDS = '.stage,.sq,.ct,.empty b,h3,.step p,.empty p,.sh>*,.status,.field,.go';
+  const DWELL = 900;          // jeda minimal sebelum elemen boleh disembunyikan lagi (ms)
+  const ASM_MS = 2000;        // masa assembly awal
+  const units = [...document.querySelectorAll(UNITS)];
+  const finish = () => root.classList.remove('hld');
+
+  document.addEventListener('visibilitychange', () => root.classList.toggle('tab-hidden', document.hidden));
+  if (reduced() || !('IntersectionObserver' in window) || !Element.prototype.animate) { finish(); return; }
+
+  /* arah scroll: listener pasif, hanya membandingkan scrollY */
+  let dY = 1, ly = scrollY;
+  addEventListener('scroll', () => { const y = scrollY; if (y !== ly) { dY = y > ly ? 1 : -1; ly = y; } }, { passive: true });
+
+  /* stagger anak: ikon -> heading -> deskripsi -> tombol/field */
+  const tier = t => t.matches('.stage,.sq') ? 0 : t.matches('.ct,b,h3,.sh>h2') ? 1 : t.matches('.status,p,.sh>p') ? 2 : 3;
+  const stagger = (u, base) => {
+    if (!u.matches('#proses,#hasil,.step,.sh')) return;
+    let si = 0;
+    u.querySelectorAll(KIDS).forEach(t => {
+      if (!t.offsetParent || (t.closest('.stage') && !t.matches('.stage'))) return;
+      const k = tier(t);
+      const delay = base + k * 80 + (t.matches('.stage') ? si++ * 50 : 0);
+      t.animate([{ opacity: 0, translate: '0 14px' }, { opacity: 1, translate: '0 0' }],
+        { duration: 600, delay, easing: EASE, fill: 'backwards' });
+    });
+  };
+
+  const rowDelay = e => e.matches('.step') ? ([...e.parentNode.children].indexOf(e) % 2) * 70 : 0;
+
+  const show = e => {
+    const d = rowDelay(e);
+    e._on = true; e._t = performance.now();
+    e.classList.add('rv-nt');
+    e.style.setProperty('--ry', `${dY * 40}px`);   // masuk dari arah scroll
+    e.style.setProperty('--d', d + 'ms');
+    void e.offsetWidth;                            // satu elemen, hanya saat masuk
+    e.classList.remove('rv-nt', 'rv-off');
+    stagger(e, d + 220);
+  };
+  const hide = e => {
+    e._on = false;
+    e.style.setProperty('--ry', `${-dY * 24}px`);  // keluar searah scroll
+    e.style.setProperty('--d', '0ms');
+    e.classList.add('rv-off');
+  };
+  const judge = e => {
+    if (!e._on && e._r >= .15) show(e);
+    else if (e._on && e._r <= .05) {
+      const left = DWELL - (performance.now() - e._t);
+      if (left > 0) { clearTimeout(e._w); e._w = setTimeout(() => judge(e), left + 30); }
+      else hide(e);
+    }
+  };
+
+  const start = () => {
+    const vh = innerHeight, now = performance.now();
+    const O = { x: innerWidth / 2, y: vh * .4 };   // titik fokus: logo X di tengah layar
+    const rects = units.map(e => e.getBoundingClientRect());
+    const mark = $('.logo-mark'), logoT = $('.logo-t'), mr = mark.getBoundingClientRect();
+    let i = 0;
+
+    units.forEach((e, k) => {
+      const r = rects[k];
+      e.classList.add('rv', 'rv-nt');
+      e._r = 1;
+      if (e.matches('header')) { e._on = true; e._t = now + ASM_MS; return; }
+      if (r.top >= vh - 20 || !r.width) {          // di bawah fold: langsung siap, muncul saat di-scroll
+        e._on = false; e._t = 0; e._r = 0;
+        e.style.setProperty('--ry', '40px');
+        e.classList.add('rv-off');
+        return;
+      }
+      e._on = true; e._t = now + ASM_MS;
+      const d = 520 + i++ * 65;
+      const dx = O.x - (r.left + r.width / 2), dy = O.y - (r.top + r.height / 2);
+      e.animate([
+        { opacity: 0, transform: `translate(${dx}px,${dy}px) scale(.3)` },
+        { opacity: 1, offset: .35 },
+        { opacity: 1, transform: 'none' }
+      ], { duration: 1000, delay: d, easing: EASE, fill: 'backwards' });
+      stagger(e, d + 260);
+    });
+
+    /* logo X: muncul sendiri di titik fokus, lalu terbang ke posisi header */
+    const mx = O.x - (mr.left + mr.width / 2), my = O.y - (mr.top + mr.height / 2);
+    const at = `translate(${mx}px,${my}px) scale(2.6)`;
+    mark.animate([
+      { opacity: 0, transform: at, offset: 0 },
+      { opacity: 1, transform: at, offset: .36 },
+      { opacity: 1, transform: 'none', offset: 1 }
+    ], { duration: 1400, easing: EASE, fill: 'backwards' });
+    logoT.animate([{ opacity: 0, transform: 'translateX(-8px)' }, { opacity: 1, transform: 'none' }],
+      { duration: 700, delay: 900, easing: EASE, fill: 'backwards' });
+
+    finish();
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      units.forEach(e => e.classList.remove('rv-nt'));
+      const io = new IntersectionObserver(es => es.forEach(en => {
+        en.target._r = en.isIntersecting ? en.intersectionRatio : 0;
+        judge(en.target);
+      }), { threshold: [0, .05, .15] });
+      units.forEach(e => io.observe(e));
+    }));
+  };
+
+  const fontsReady = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
+  Promise.race([fontsReady, new Promise(r => setTimeout(r, 900))]).then(start);
+}
+
+/* ============================================================
    Init
    ============================================================ */
 hydrate(document);
@@ -534,3 +654,4 @@ setStatus(IDLE_TEXT, '');
 buildMarquee();
 initDots();
 initLogo();
+initMotion();
