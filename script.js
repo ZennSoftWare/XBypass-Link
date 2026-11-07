@@ -109,13 +109,13 @@ class BypassError extends Error {
    Progress indicator (lima tahapan)
    ============================================================ */
 const stagesEl = $('#stages');
-const chainEl = $('#chain');
+const statusEl = $('#status');
+const IDLE_TEXT = 'Siap memproses. Tempel link di bawah lalu tekan Bypass.';
 const pstate = $('#pstate');
 const WORD = { idle: 'menunggu', busy: 'sedang berjalan', ok: 'selesai', err: 'gagal' };
 const PWORD = { idle: 'Siap', busy: 'Memproses', ok: 'Selesai', err: 'Gagal' };
 const st = STAGES.items.map(() => 'idle');
 const nodes = [];
-const chain = [];
 let current = null; // provider yang terdeteksi
 
 function stageLabel(i) {
@@ -134,15 +134,6 @@ function buildStages() {
       '<span class="sl"><span class="lt"></span><span class="sr"></span></span>';
     stagesEl.appendChild(li);
     nodes.push({ li, lt: li.querySelector('.lt'), sr: li.querySelector('.sr') });
-
-    const c = document.createElement('span');
-    chainEl.appendChild(c);
-    chain.push(c);
-    if (i < STAGES.items.length - 1) {
-      const a = document.createElement('i');
-      a.textContent = '→';
-      chainEl.appendChild(a);
-    }
   });
   paintAll();
 }
@@ -152,17 +143,33 @@ function paint(i) {
   nodes[i].li.dataset.s = st[i];
   nodes[i].lt.textContent = l;
   nodes[i].sr.textContent = ` (${WORD[st[i]]})`;
-  chain[i].textContent = `[${i + 1}] ${l}`;
-  chain[i].className = st[i] === 'ok' ? 'done' : st[i] === 'busy' ? 'cur' : st[i] === 'err' ? 'bad' : '';
+  nodes[i].li.title = l;
 }
 const paintAll = () => st.forEach((_, i) => paint(i));
 
 function setStage(i, s) {
   st[i] = s;
   paint(i);
-  if (s === 'busy') announce(`Langkah ${i + 1} dari ${st.length}: ${stageLabel(i)}`);
+  const last = i === st.length - 1;
+  if (s === 'busy') {
+    announce(`Langkah ${i + 1} dari ${st.length}: ${stageLabel(i)}`);
+    setStatus(`[${i + 1}] ${stageLabel(i)}`, 'cur');
+  } else if (last && (s === 'ok' || s === 'err')) {
+    setStatus(`[${i + 1}] ${stageLabel(i)}`, s === 'ok' ? 'done' : 'bad');
+  }
 }
-const resetStages = () => { st.fill('idle'); paintAll(); };
+const resetStages = () => { st.fill('idle'); paintAll(); setStatus(IDLE_TEXT, ''); };
+
+/* Satu teks status dinamis (tinggi tetap, tidak menambah panjang panel) */
+function setStatus(text, kind) {
+  if (statusEl.textContent === text && statusEl.dataset.k === (kind || '')) return;
+  statusEl.textContent = text;
+  statusEl.dataset.k = kind || '';
+  statusEl.className = 'status' + (kind ? ' ' + kind : '');
+  statusEl.classList.remove('sw');
+  void statusEl.offsetWidth;
+  statusEl.classList.add('sw');
+}
 
 function setPanel(s) {
   pstate.dataset.s = s;
@@ -506,18 +513,6 @@ function initDots() {
 /* ============================================================
    Header & logo
    ============================================================ */
-function initHeader() {
-  const hdr = $('header');
-  let tick = false;
-  const on = () => {
-    if (tick) return;
-    tick = true;
-    requestAnimationFrame(() => { hdr.classList.toggle('sc', scrollY > 8); tick = false; });
-  };
-  addEventListener('scroll', on, { passive: true });
-  on();
-}
-
 function initLogo() {
   const mark = $('.logo-mark');
   const img = mark.querySelector('img');
@@ -534,8 +529,8 @@ function initLogo() {
    ============================================================ */
 hydrate(document);
 buildStages();
+setStatus(IDLE_TEXT, '');
 [goBtn, pasteBtn, copyBtn].forEach(b => syncLbs(b));
 buildMarquee();
 initDots();
-initHeader();
 initLogo();
