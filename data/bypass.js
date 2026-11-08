@@ -22,6 +22,15 @@ export const BYPASS_PROVIDERS = [
     enabled: true
   },
   {
+    id: "Bicolink",
+    name: "Bicolink.com",
+    domains: ["bicolink.com"],
+    endpoint: "/api/bypass-bicolink",
+    processingLabel: "Bicolink",
+    icon: "/assets/logo-bypass/bicolink.jpg",
+    enabled: true
+  },
+  {
     id: "pastelink",
     name: "pastelink.net",
     domains: ["pastelink.net"],
