@@ -4,7 +4,7 @@
 
 export const BYPASS_PROVIDERS = [
   {
-    id: "sub2unlock-me",
+    id: "sub2unlock",
     name: "Sub2Unlock.me",
     domains: ["sub2unlock.me"],
     endpoint: "/api/bypass-sub2unlock-me",
@@ -13,7 +13,7 @@ export const BYPASS_PROVIDERS = [
     enabled: true
   },
   {
-    id: "sub2unlock-io",
+    id: "sub2unlock",
     name: "Sub2Unlock.io",
     domains: ["sub2unlock.io"],
     endpoint: "/api/bypass-sub2unlock-io",
@@ -34,13 +34,13 @@ export const BYPASS_PROVIDERS = [
     id: "pastelink",
     name: "pastelink.net",
     domains: ["pastelink.net"],
-    endpoint: "/api/bypass-pastelink",
+    endpoint: "/api/bypass-pastelink-net",
     processingLabel: "Pastelink",
     icon: "/assets/logo-bypass/pastelink.png",
     enabled: true
   },
   {
-    id: "Pastelink-id",
+    id: "Pastelink",
     name: "Pastelink.id",
     domains: ["pastelink.id"],
     endpoint: "/api/bypass-pastelink-id",
@@ -76,7 +76,7 @@ export const BYPASS_PROVIDERS = [
     enabled: true
   },
   {
-    id: "sub4unlock-id",
+    id: "sub4unlock",
     name: "Sub4unlock.id",
     domains: ["sub4unlock.id"],
     endpoint: "/api/bypass-sub4unlock-id",
@@ -85,7 +85,7 @@ export const BYPASS_PROVIDERS = [
     enabled: true
   },
   {
-    id: "sub4unlock-pro",
+    id: "sub4unlock",
     name: "Sub4Unlock-pro",
     domains: ["sub4unlock.pro"],
     endpoint: "/api/bypass-sub4unlock-pro",
@@ -94,7 +94,7 @@ export const BYPASS_PROVIDERS = [
     enabled: true
   },
   {
-    id: "sub4unlock-com",
+    id: "sub4unlock",
     name: "Sub4Unlock.com",
     domains: ["sub4unlock.com"],
     endpoint: "/api/bypass-sub4unlock-com",
