@@ -31,6 +31,15 @@ export const BYPASS_PROVIDERS = [
     enabled: true
   },
   {
+    id: "Pastelink-id",
+    name: "Pastelink.id",
+    domains: ["pastelink.id"],
+    endpoint: "/api/bypass-pastelink-id",
+    processingLabel: "Pastelink-id",
+    icon: "/assets/logo-bypass/pastelink-id.png",
+    enabled: true
+  },
+  {
     id: "shrinkme",
     name: "shrinkme.io",
     domains: ["shrinkme.io"],
