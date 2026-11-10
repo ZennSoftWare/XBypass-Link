@@ -251,6 +251,8 @@ async function run() {
     const provider = findProvider(url.hostname);
     if (!provider) throw new BypassError('UNSUPPORTED_DOMAIN', 1);
     if (!provider.enabled) throw new BypassError('PROVIDER_DISABLED', 1);
+    const shortPath = url.pathname.replace(/\/+$/, '');
+    if (!shortPath || shortPath === '/') throw new BypassError('INCOMPLETE_URL', 1);
     current = provider;
     setStage(1, 'ok');
     paint(3);
@@ -260,23 +262,29 @@ async function run() {
     setStage(2, 'busy');
     timer = setTimeout(() => ctrl.abort(), CFG.timeoutMs);
     const res = await post(provider, url.href, ctrl.signal);
-    const isJson = /json/i.test(res.headers.get('content-type') || '');
-    if (!isJson && [404, 405, 501].includes(res.status)) throw new BypassError('API_UNAVAILABLE', 2);
+    const text = await res.text();
+    let data = null;
+    try { data = JSON.parse(text); } catch { /* ditangani di bawah */ }
+
+    /* 404/405/501 tanpa kontrak JSON = platform/Vercel tidak menemukan
+       endpoint (bukan hasil engine). Jangan salah tampil sebagai
+       INVALID_RESPONSE. */
+    const unavailableStatus = [404, 405, 501].includes(res.status);
+    const contractOk = data !== null && typeof data === 'object' && !Array.isArray(data) &&
+      typeof data.success === 'boolean';
+    if (unavailableStatus && !contractOk) throw new BypassError('API_UNAVAILABLE', 2);
     setStage(2, 'ok');
 
     /* [4] Memproses {provider} — selesai hanya saat respons valid diterima */
     cur = 3;
     setStage(3, 'busy');
-    const text = await res.text();
-    let data = null;
-    try { data = JSON.parse(text); } catch { /* ditangani di bawah */ }
 
     if (data === null) {
       throw res.ok
         ? new BypassError('INVALID_JSON', 3)
         : new BypassError('HTTP_ERROR', 3, null, { status: res.status });
     }
-    if (typeof data !== 'object' || Array.isArray(data) || typeof data.success !== 'boolean') {
+    if (!contractOk) {
       throw new BypassError('INVALID_RESPONSE', 3);
     }
     markApi();
@@ -310,7 +318,7 @@ async function run() {
     if (err.stage < st.length - 1) setStage(st.length - 1, 'err');
     setPanel('err');
     setState(goBtn, 'idle');
-    const inputIssue = ['EMPTY_URL', 'INVALID_URL', 'UNSUPPORTED_DOMAIN', 'PROVIDER_DISABLED'].includes(err.code);
+    const inputIssue = ['EMPTY_URL', 'INVALID_URL', 'INCOMPLETE_URL', 'UNSUPPORTED_DOMAIN', 'PROVIDER_DISABLED'].includes(err.code);
     showError(err.message, inputIssue);
     if (inputIssue) input.focus({ preventScroll: true });
     announce('Bypass gagal. ' + err.message);
