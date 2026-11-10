@@ -1,417 +1,273 @@
-/* ============================================================
- * middleware.js — XBypass (Vercel Routing Middleware)
- * ============================================================
- * Lapisan keamanan untuk route /api/* SAJA.
- * Konvensi Vercel (middleware.js di root + export default +
- * export config). Static assets (gambar/CSS/JS/font/HTML) tidak
- * melewati middleware ini — matcher membatasi pada /api/:path*.
+/* ====================================================================
+ * XBypass — middleware.js (Vercel Routing Middleware, Edge runtime)
  *
- * Rangkaian (REQUEST → MIDDLEWARE → SECURITY/BOT CHECK → RATE LIMIT
- * → URL VALIDATOR (di endpoint) → ENGINE → RESPONSE HANDLER → JSON):
- *   - Semua keputusan rate limit/spam dibaca dari lib/rate-limit.js
- *     (sumber tunggal; tidak ada duplikasi logika).
- *   - Seluruh bentuk body JSON dibuat memakai lib/response-handler.js
- *     (format respons = satu sumber kebenaran).
- *   - Validasi URL/target penulisan Deep (SSRF) tetap di lib/url-validator.js
- *     dan menjalangkannya di endpoint/API adapter (bukan middleware).
+ * Lapisan keamanan HANYA untuk /api/:path* (lihat export const config).
+ * Static assets (HTML/CSS/JS/font/gambar/logo) tidak pernah lewat sini.
  *
- * NOTE runtime: middleware berjalan pada runtime Node.js (default Vercel),
- * sehingga membuat import CommonJS di lib/ aman tanpa mengubah seluruh
- * project menjadi ES Modules — engine API tetap CommonJS.
+ * Alur:  REQUEST → middleware (security check) → [selanjutnya]
+ *        rate limit (lib/rate-limit.js, Redis terdistribusi)
+ *        → endpoint handler (Node/CJS) → lib/response-handler.js → JSON
  *
- * Hard rules:
- *   - IP diambil via ipAddress() helper resmi @vercel/functions
- *     (header X-Forwarded-For user-CONTROLLED tidak dipercaya).
- *   - Blocking hanya TIDAK PERMANEN: seluruh blokir disimpan dengan TTL
- *     (lihat lib/rate-limit.js) — tidak ada daftar blokir lokal.
- *   - Normal users TIDAK diblokir hanya berdasarkan User-Agent;
- *     UA adalah satu dari beberapa sinyal dan threshold dijaga tinggi.
- * ============================================================ */
+ * Ketentuan:
+ *  - Import helper resmi: ipAddress() & next() dari "@vercel/functions".
+ *    Subpath dipakai (headers/middleware) agar Edge tidak ikut memuat
+ *    modul Node yang tidak diperlukan.
+ *  - Validasi, limit & kategori kode HANYA sekali di lib/ — middleware
+ *    tidak memusatkan tabel sendiri (anti-duplikasi).
+ *  - IP diambil via ipAddress(request) — header platform Vercel
+ *    (x-real-ip), bukan header yang bisa dipalsukan pengguna.
+ *  - Blokir IP sementara disimpan di Redis (TTL kedaluwarsa otomatis),
+ *    BUKAN variabel lokal serverless.
+ *  - Blokir permanen isu User-Agent SAJA: dilarang. UA hanya sinyal
+ *    bersama dengan penekanan rate (lihat botScore + blok akseleratif).
+ *  - Log operasional tanpa token/cookie/konten pengguna.
+ *  - Berkas ini SAYA WAJIB bercorak ESM (export default/config) karena
+ *    kontrak file middleware Vercel — ini TIDAK menyetel proyek ini jadi
+ *    ESM: seluruh engine di api/ tetap CommonJS.
+ * ==================================================================== */
 
-import { ipAddress, next } from '@vercel/functions';
-import rateLimit from './lib/rate-limit.js';
-import responseHandler from './lib/response-handler.js';
+import { ipAddress } from '@vercel/functions';
+import { next } from '@vercel/functions/middleware';
+import rbPack from './lib/response-handler.js';
+import rl from './lib/rate-limit.js';
 
-/* ==================================================================== */
-/* Konstanta                                                             */
-/* ==================================================================== */
+/* ------------------------------------------------------------------ */
+/* Konfigurasi ekspresi lingkungan                                     */
+/* ------------------------------------------------------------------ */
 
-const API_PREFIX = '/api';
-const MAX_BODY_BYTES = 16 * 1024; // 16 KB
-const JSON_CONTENT_TYPE = /^application\/(?:[\w.+-]+\+)?json(?:\s*;.*)?$/i;
-
-/* Signature otomasi yang jelas-jelas BUKAN browser normal:
-   user normal tidak akan pernah memakai klien berikut; dianggap
-   salah satu sinyal (bukan satu-satunya kunci). */
-const AUTOMATION_UA = /(?:curl\/|wget\/|python-(?:requests|urllib|httplib)|go-http-client|java\/|libwww-perl|scrapy|scrapinghub|axios\/|undici\/|aiohttp|httpx\/|postmanruntime|insomnia\/|node-fetch|headlesschrome|puppeteer|playwright|phantomjs|selenium|okhttp\/|dart:io|httrack|masscan|nucktrace|nikto|openai-internal|facebookexternalhit)/i;
-
-/* Ambang skor anti-bot: klien automasi (4) + sinyal header rawan (>=1)
-   -> >=5 diblok; normal users (0..1) aman. Header yang hilang hanya
-   menambahkan skor, tidak pernah menjadi alasan tunggal pemblokiran. */
-const BLOCK_THRESHOLD = 5;
-
-/* ==================================================================== */
-/* Utilitas kecil                                                        */
-/* ==================================================================== */
-
-function securityHeaders(extra = {}) {
-  return {
-    'x-content-type-options': 'nosniff',
-    'referrer-policy': 'strict-origin-when-cross-origin',
-    'x-frame-options': 'DENY',
-    'permissions-policy': 'accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=(), interest-cohort=()',
-    'cache-control': 'no-store, must-revalidate',
-    ...(extra || {}),
-  };
+function numEnv(name, fallback, { min, max } = {}) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  let v = Math.floor(n);
+  if (min !== undefined) v = Math.max(min, v);
+  if (max !== undefined) v = Math.min(max, v);
+  return v;
 }
 
-function normalizeIp(ip) {
-  let value = String(ip || '').trim();
-  // menormalisasi bentuk IPv4-mapped IPv6 (::ffff:127.0.0.1)
-  if (value.startsWith('::ffff:') && value.includes('.')) value = value.slice(7);
-  return value || 'unknown';
+const MAX_BODY_BYTES = numEnv('MW_MAX_BODY_BYTES', 32768, { min: 64, max: 1048576 });
+const BOT_STRICT_SCORE = numEnv('MW_BOT_STRICT_SCORE', 60, { min: 0, max: 100 });
+const EXTRA_ORIGINS = new Set(
+  (process.env.MW_EXTRA_ORIGINS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+);
+
+const ALLOWED_METHODS = new Set(['GET', 'POST', 'OPTIONS', 'HEAD']);
+
+/* Header keamanan dan cache untuk seluruh respons API */
+const SECURITY_HEADERS = {
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'strict-origin-when-cross-origin',
+  'x-frame-options': 'deny',
+  'permissions-policy': 'browsing-topics=(), camera=(), microphone=(), geolocation=(), payment=()',
+  'cache-control': 'no-store, max-age=0',
+};
+
+/* ------------------------------------------------------------------ */
+/* Monitoring (tersanitasi: tanpa UA/token/cookie/body)                */
+/* ------------------------------------------------------------------ */
+
+function shortIp(ip) {
+  if (!ip) return 'unknown';
+  return ip.length > 40 ? ip.slice(0, 40) : ip;
 }
 
-/** Host sama domain ATAU subdomain dari domain deployment sendiri. */
-function isSameSiteHostname(hostA, hostB) {
-  const a = String(hostA || '').toLowerCase().replace(/\.$/, '');
-  const b = String(hostB || '').toLowerCase().replace(/\.$/, '');
-  if (!a || !b) return false;
-  return a === b || a.endsWith('.' + b);
+function logLine(entry) {
+  try {
+    console.log(JSON.stringify({ t: new Date().toISOString(), ...entry }));
+  } catch {
+    /* logging tidak boleh membatalkan alur request */
+  }
 }
 
-/**
- * Anti-bot: skor sinyal request.
- * UA hilang / header browser hilang = sinyal lembut (tidak pernah
- * menjadi alasan tunggal block); klien automasi = sinyal kuat.
- */
-function antiBotScore(request, ua) {
-  let score = 0;
+/* ------------------------------------------------------------------ */
+/* Anti-bot: analisis kombinasi sinyal (skor, bukan blokir by-UA)      */
+/* ------------------------------------------------------------------ */
+
+const AUTOMATION_UA =
+  /(curl|wget|python-requests|python-urllib|scrapy|httpx|go-http-client|java\/|okhttp|libwww|undici|axios\/|node-fetch|httpclient|postmanruntime|reqwest|akamai|headless|puppeteer|playwright|phantom|selenium|^bot|crawler|spider|slurp|scanner|masscan|zgrab)/i;
+const BROWSER_UA = /(mozilla|chrome|safari|gecko|firefox|edge|opr)/i;
+
+function botScore(request) {
   const signals = [];
+  const ua = request.headers.get('user-agent') || '';
 
-  if (!ua) {
-    score += 2;
-    signals.push('user-agent missing');
+  if (!ua.trim()) {
+    signals.push('ua_missing');
   } else if (AUTOMATION_UA.test(ua)) {
-    score += 4;
-    signals.push('automation client UA');
+    signals.push('ua_automation');
   }
 
-  // sinyal tambahan maksimum +1 total sekali (tetap lembut)
-  const accept = request.headers.get('accept');
-  if (!accept || accept === '*/*') {
-    score += 1;
-    signals.push('accept header kosong / wildcard');
+  if (BROWSER_UA.test(ua)) {
+    // UA mengaku browser: karakteristik browser harus ada, kalau tidak
+    // ini kecurigaan palinting (tetap bukan bantag untuk blokir langsung)
+    if (!request.headers.get('accept')) signals.push('ua_browser_no_accept');
+    if (!request.headers.get('sec-fetch-site')) signals.push('ua_browser_no_sec-fetch');
   }
 
+  const score = Math.min(
+    100,
+    (signals.includes('ua_missing') ? 25 : 0) +
+      (signals.includes('ua_automation') ? 40 : 0) +
+      (signals.includes('ua_browser_no_accept') ? 10 : 0) +
+      (signals.includes('ua_browser_no_sec-fetch') ? 15 : 0) +
+      (signals.includes('ua_browser_no_accept') && signals.includes('ua_browser_no_sec-fetch') ? 20 : 0)
+  );
   return { score, signals };
 }
 
-/** Limit respons untuk header X-RateLimit-* */
-function rateLimitHeaders(verdict, blockedStatus) {
-  const headers = {
-    'x-ratelimit-mode': verdict.mode || 'unknown',
-  };
-  if (typeof verdict.limit === 'number') headers['x-ratelimit-limit'] = String(verdict.limit);
-  if (typeof verdict.remaining === 'number') headers['x-ratelimit-remaining'] = String(verdict.remaining);
-  if (typeof verdict.resetMs === 'number') {
-    headers['x-ratelimit-reset'] = String(Math.ceil(verdict.resetMs / 1000));
-  } else if (verdict.retryAfterMs > 0) {
-    headers['x-ratelimit-reset'] = String(Math.ceil((Date.now() + verdict.retryAfterMs) / 1000));
-  }
-  if (blockedStatus) {
-    headers['retry-after'] = String(Math.max(1, Math.ceil((verdict.retryAfterMs || 60_000) / 1000)));
-  }
-  return headers;
-}
+/* ------------------------------------------------------------------ */
+/* Util respons Edge                                                   */
+/* ------------------------------------------------------------------ */
 
-/** Log operasional — TANPA token/cookie/header sensitif lainnya. */
-function logRequest({ method, endpoint, ip, status, reason, mode, startedAt }) {
-  try {
-    console.log(JSON.stringify({
-      t: new Date().toISOString(),
-      component: 'middleware',
-      method,
-      endpoint,
-      ip,
-      status,
-      reason: reason || 'OK',
-      mode: mode || 'unknown',
-      ms: startedAt ? Date.now() - startedAt : undefined,
-    }));
-  } catch (_) { /* logging opsional */ }
-}
-
-/** Baca body dengan batas; kembalikan { text, truncated } */
-async function readBodyCapped(request, maxBytes) {
-  let stream = null;
-  try {
-    if (typeof request.clone === 'function') {
-      stream = request.clone().body; // original body tidak dikonsumsi di sini
-    } else {
-      stream = request.body;
+function denyResponse(status, code, userMessage, extraHeaders) {
+  const headers = new Headers(SECURITY_HEADERS);
+  headers.set('content-type', 'application/json; charset=utf-8');
+  if (extraHeaders) {
+    for (const [k, v] of Object.entries(extraHeaders)) {
+      if (v !== undefined && v !== null) headers.set(k, String(v));
     }
-    if (!stream || typeof stream.getReader !== 'function') return { text: null, truncated: false };
-
-    const reader = stream.getReader();
-    const decoder = new TextDecoder('utf-8');
-    let text = '';
-    let read = 0;
-    for (;;) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      read += chunk.value ? chunk.value.byteLength : 0;
-      if (read > maxBytes) {
-        // cancel jangan di-await: undici bisa tidak pernah settle padanya
-        try { Promise.resolve(reader.cancel()).catch(() => {}); } catch (_) { /* diabaikan */ }
-        return { text: null, truncated: true };
-      }
-      text += chunk.value ? decoder.decode(chunk.value, { stream: true }) : '';
-    }
-    text += decoder.decode();
-    return { text, truncated: false };
-  } catch (_) {
-    return { text: null, truncated: false };
   }
+  const message = rbPack.OUTPUT_MESSAGES[code] || userMessage || 'Request tidak diizinkan.';
+  return new Response(
+    JSON.stringify({ success: false, provider: null, error: { code, message } }),
+    { status, headers }
+  );
 }
 
-async function sha256Hex(text) {
+function originIsAllowed(originHeader, requestUrl) {
+  let o;
   try {
-    const data = new TextEncoder().encode(text);
-    const digest = await crypto.subtle.digest('SHA-256', data);
-    return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
-  } catch (_) {
-    return null;
+    o = new URL(originHeader);
+  } catch {
+    return false;
   }
+  if (o.protocol !== 'https:' && o.protocol !== 'http:') return false;
+  if (o.origin === requestUrl.origin) return true;
+  if (EXTRA_ORIGINS.has(o.origin)) return true;
+  return false;
 }
 
-/** Host dari URL target (jika bisa dipahami) utk anti-scraping */
-function extractTargetHostForHash(rawUrl) {
-  try {
-    const cleaned = String(rawUrl || '').trim();
-    if (!cleaned || cleaned.length > 2048) return null;
-    const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(cleaned) ? cleaned : 'https://' + cleaned;
-    const u = new URL(withScheme);
-    return (u.hostname || '').toLowerCase();
-  } catch (_) {
-    return null;
-  }
-}
-
-function jsonBlockedResponse(code, { provider = null, message = null, extraHeaders = {} } = {}) {
-  const status = responseHandler.HTTP_STATUS_BY_CODE[code] || 400;
-  const body = responseHandler.buildError({ code, message, provider });
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: {
-      'content-type': 'application/json; charset=utf-8',
-      'cache-control': 'no-store',
-      ...securityHeaders(),
-      ...extraHeaders,
-    },
-  });
-}
-
-/* ==================================================================== */
-/* Middleware utama                                                      */
-/* ==================================================================== */
+/* ------------------------------------------------------------------ */
+/* Middleware utama                                                    */
+/* ------------------------------------------------------------------- */
 
 export default async function middleware(request) {
-  const startedAt = Date.now();
-  let mode = rateLimit.getStatus().mode;
+  const url = new URL(request.url);
+  const endpoint = url.pathname;
+  /* belt & brace: matcher sudah /api/:path* */
+  if (!endpoint.startsWith('/api/') && endpoint !== '/api') return next();
 
-  try {
-    const url = new URL(request.url);
-    const pathname = url.pathname;
-    const method = String(request.method || 'GET').toUpperCase();
+  const method = request.method.toUpperCase();
+  const ip = shortIp(ipAddress(request));
+  const status = rl.getRateLimitStatus();
+  const ingressMs = Date.now();
 
-    // Pengaman ganda: hanya /api/* — matcher sudah membatasi di config.
-    if (pathname !== API_PREFIX && !pathname.startsWith(API_PREFIX + '/')) {
-      return next();
-    }
-
-    let ip = 'unknown';
-    try { ip = normalizeIp(ipAddress(request)); } catch (_) { ip = 'unknown'; }
-
-    const ua = request.headers.get('user-agent') || '';
-
-    /* ---------- Preflight CORS (OPTIONS) ---------- */
-    if (method === 'OPTIONS') {
-      const origin = request.headers.get('origin') || '';
-      let corsHeaders = {};
-      if (origin && isSameSiteHostname(new URL(origin).hostname, url.hostname)) {
-        corsHeaders = {
-          'access-control-allow-origin': origin,
-          'access-control-allow-credentials': 'false',
-        };
-      }
-      const response = new Response(null, {
-        status: 204,
-        headers: {
-          'access-control-allow-methods': 'GET, POST, OPTIONS',
-          'access-control-allow-headers': 'Content-Type, Accept',
-          'access-control-max-age': '86400',
-          ...securityHeaders(),
-          ...corsHeaders,
-        },
-      });
-      logRequest({ method, endpoint: pathname, ip, status: 204, reason: 'PREFLIGHT', mode, startedAt });
-      return response;
-    }
-
-    /* ---------- Metode HTTP ---------- */
-    if (method !== 'POST' && method !== 'GET' && method !== 'HEAD') {
-      const response = jsonBlockedResponse('METHOD_NOT_ALLOWED', {
-        extraHeaders: { allow: 'GET, HEAD, POST, OPTIONS' },
-      });
-      logRequest({ method, endpoint: pathname, ip, status: 405, reason: 'METHOD_NOT_ALLOWED', mode, startedAt });
-      return response;
-    }
-
-    /* ---------- GET/HEAD: hanya header keamanan + pemantauan ---------- */
-    if (method === 'GET' || method === 'HEAD') {
-      logRequest({ method, endpoint: pathname, ip, status: 0, reason: 'PASSTHROUGH_GET', mode, startedAt });
-      return next({ headers: { ...securityHeaders() } });
-    }
-
-    /* ===== POST: lapisan penuh ===== */
-
-    /* -- ukuran (-- 1) --- */
-    const contentLength = parseInt(request.headers.get('content-length') || '0', 10);
-    if (Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES) {
-      const response = jsonBlockedResponse('PAYLOAD_TOO_LARGE');
-      logRequest({ method, endpoint: pathname, ip, status: 413, reason: 'PAYLOAD_TOO_LARGE', mode, startedAt });
-      return response;
-    }
-
-    /* -- content-type (2) --- */
-    const contentType = request.headers.get('content-type') || '';
-    if (!JSON_CONTENT_TYPE.test(contentType)) {
-      const response = jsonBlockedResponse('UNSUPPORTED_MEDIA_TYPE');
-      logRequest({ method, endpoint: pathname, ip, status: 415, reason: 'UNSUPPORTED_MEDIA_TYPE', mode, startedAt });
-      return response;
-    }
-
-    /* -- origin (3) --- */
-    const origin = request.headers.get('origin');
-    if (origin) {
-      const validOrigin = (() => {
-        try {
-          return new URL(origin).hostname;
-        } catch (_) { return null; }
-      })();
-      if (!validOrigin || !isSameSiteHostname(validOrigin, url.hostname)) {
-        const response = jsonBlockedResponse('ORIGIN_FORBIDDEN');
-        logRequest({ method, endpoint: pathname, ip, status: 403, reason: 'ORIGIN_FORBIDDEN', mode, startedAt });
-        return response;
-      }
-    }
-
-    /* -- anti-bot (4) --- */
-    const bot = antiBotScore(request, ua);
-    if (bot.score >= BLOCK_THRESHOLD) {
-      const response = jsonBlockedResponse('BOT_BLOCKED', {
-        message: 'Karakteristik permintaan terdeteksi sebagai otomatisasi.',
-      });
-      logRequest({ method, endpoint: pathname, ip, status: 403, reason: 'ANTI_BOT (' + bot.signals.join(', ') + ')', mode, startedAt });
-      return response;
-    }
-
-    /* -- body dibaca dengan batas ukuran (5) --- */
-    const { text: bodyText, truncated } = await readBodyCapped(request, MAX_BODY_BYTES);
-    if (truncated) {
-      const response = jsonBlockedResponse('PAYLOAD_TOO_LARGE');
-      logRequest({ method, endpoint: pathname, ip, status: 413, reason: 'PAYLOAD_TOO_LARGE (baca)', mode, startedAt });
-      return response;
-    }
-
-    /* -- payload harus JSON object (6) --- */
-    let payload = null;
-    if (bodyText) {
-      try {
-        payload = JSON.parse(bodyText);
-      } catch (_) {
-        payload = null;
-      }
-      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-        const response = jsonBlockedResponse('SUSPICIOUS_REQUEST', {
-          message: 'Body tidak memenuhi format JSON yang diterima endpoint.',
-        });
-        logRequest({ method, endpoint: pathname, ip, status: 400, reason: 'SUSPICIOUS_REQUEST (payload)', mode, startedAt });
-        return response;
-      }
-    }
-
-    /* -- anti-scraping: hitung target unik (7) --- */
-    if (payload && typeof payload.url === 'string') {
-      const host = extractTargetHostForHash(payload.url);
-      if (host) {
-        try {
-          const noted = await rateLimit.noteTarget(ip, host);
-          if (noted && noted.exceeded) {
-            await rateLimit.reportViolation(ip, 'TOO_MANY_TARGETS');
-            const response = jsonBlockedResponse('TOO_MANY_TARGETS', {
-              extraHeaders: { 'x-rejection-reason': 'TOO_MANY_TARGETS' },
-            });
-            logRequest({ method, endpoint: pathname, ip, status: 429, reason: 'TOO_MANY_TARGETS', mode, startedAt });
-            return response;
-          }
-        } catch (_) { /* kegagalan anti-scraping tidak mematahkan alur request */ }
-      }
-    }
-
-    /* -- rate limit + spam protection (8) --- */
-    const payloadKey = bodyText ? await sha256Hex(bodyText) : null;
-    let verdict = null;
-    try {
-      verdict = await rateLimit.evaluateRequest({ ip, endpoint: pathname, payloadKey });
-      mode = verdict.mode || mode;
-    } catch (_) {
-      verdict = null; // kegagalan infrastruktur rate limit tidak boleh memblokir request sah
-    }
-
-    if (verdict && !verdict.allowed) {
-      const key = verdict.reason;
-      const status = responseHandler.HTTP_STATUS_BY_CODE[key] || 429;
-      const response = jsonBlockedResponse(key === 'IP_BLOCKED' ? 'IP_BLOCKED' : 'RATE_LIMITED', {
-        message: null,
-        extraHeaders: {
-          ...rateLimitHeaders(verdict, true),
-          'x-rejection-reason': key,
-        },
-      });
-      logRequest({ method, endpoint: pathname, ip, status, reason: key, mode, startedAt });
-      return response;
-    }
-
-    /* -- cooldown + duplikat stamp (9) -- diterapkan bila request lolos --- */
-    if (verdict && verdict.allowed) {
-      try {
-        await rateLimit.stampCooldown(ip, pathname, rateLimit.getConfig().cooldownMs);
-        if (payloadKey) await rateLimit.stampDuplicate(ip, pathname, payloadKey, rateLimit.getConfig().duplicateWindowMs);
-      } catch (_) { /* kegagalan stamp tidak memutus alut request */ }
-    }
-
-    /* -- pass-through dengan header keamanan (10) --- */
-    const nextHeaders = { ...securityHeaders() };
-    if (verdict) {
-      Object.assign(nextHeaders, rateLimitHeaders(verdict, false));
-    }
-    if (mode !== 'redis') {
-      nextHeaders['x-ratelimit-mode'] = mode; // status fitur jujur: bukan Redis, TIDAK global
-    }
-    logRequest({ method, endpoint: pathname, ip, status: 0, reason: 'PASSTHROUGH', mode, startedAt });
-    return next({ headers: nextHeaders });
-  } catch (err) {
-    // Jangan pernah membocorkan stack trace
-    try { console.error('[middleware] error internal:', err && err.message ? err.message : String(err)); } catch (_) { /* diabaikan */ }
-    const response = jsonBlockedResponse('INTERNAL_ERROR');
-    logRequest({ method: request && request.method, endpoint: '(?)', ip: 'unknown', status: 500, reason: 'INTERNAL_ERROR', mode, startedAt });
-    return response;
+  /* --- E. validasi HTTP method ------------------------------------- */
+  if (!ALLOWED_METHODS.has(method)) {
+    logLine({ s: 'blocked', r: 'method', m: method, p: endpoint, ip, rl: status.mode });
+    return denyResponse(
+      rbPack.CODE_STATUS.METHOD_NOT_ALLOWED,
+      'METHOD_NOT_ALLOWED',
+      null,
+      { Allow: 'GET, POST, OPTIONS, HEAD' }
+    );
   }
+
+  /* --- CORS: hanya echo origin yang diperbolehkan, tanpa wildcard --- */
+  const origin = request.headers.get('origin');
+  if (origin && !originIsAllowed(origin, url)) {
+    logLine({ s: 'blocked', r: 'origin_forbidden', m: method, p: endpoint, ip, rl: status.mode });
+    return denyResponse(rbPack.CODE_STATUS.FORBIDDEN_ORIGIN, 'FORBIDDEN_ORIGIN');
+  }
+
+  /* inline preflight — origin sudah diverifikasi di atas */
+  if (method === 'OPTIONS') {
+    const headers = new Headers(SECURITY_HEADERS);
+    if (origin) headers.set('access-control-allow-origin', origin);
+    headers.set('access-control-allow-methods', 'GET, POST, OPTIONS, HEAD');
+    headers.set('access-control-allow-headers', 'Content-Type, Accept');
+    headers.set('access-control-max-age', '86400');
+    logLine({ s: 'pass', r: 'preflight', m: method, p: endpoint, ip, rl: status.mode });
+    return new Response(null, { status: 204, headers });
+  }
+
+  /* --- E2. ukuran body & content type (hanya POST ber-body JSON) --- */
+  const contentLength = Number(request.headers.get('content-length') || 0);
+  if (contentLength > MAX_BODY_BYTES) {
+    logLine({ s: 'blocked', r: 'payload_size', m: method, p: endpoint, ip, rl: status.mode });
+    return denyResponse(rbPack.CODE_STATUS.PAYLOAD_TOO_LARGE, 'PAYLOAD_TOO_LARGE');
+  }
+  if (method === 'POST') {
+    const ct = (request.headers.get('content-type') || '').toLowerCase().trim();
+    if (!ct.startsWith('application/json')) {
+      logLine({ s: 'blocked', r: 'content_type', m: method, p: endpoint, ip, rl: status.mode });
+      return denyResponse(rbPack.CODE_STATUS.UNSUPPORTED_MEDIA_TYPE, 'UNSUPPORTED_MEDIA_TYPE');
+    }
+  }
+
+  /* --- D. rate limit (Redis sliding window; middleware memakai      */
+  /*      lib yang sama jadi pusat — tidak ada salinan algoritma) ----- */
+  const rate = await rl.checkRateLimit({ ip, endpoint });
+  const bot = botScore(request);
+
+  if (rate.blocked || isGenuineLimit(rate)) {
+    /* pelanggaran rate + sinyal bot tinggi → blokir sementara
+       dipercepat (kombinasi, bukan berdasarkan UA saja) */
+    if (isGenuineLimit(rate) && !rate.blocked && bot.score >= BOT_STRICT_SCORE) {
+      await rl.temporaryBlock(ip, Math.min(rl.CONFIG.blockTtlSec, 300), 'bot_accelerated');
+    }
+    const retryAfter = rate.retryAfterSec || rl.CONFIG.blockTtlSec;
+    const headers = {
+      'retry-after': String(retryAfter),
+      'x-ratelimit-limit': String(rl.CONFIG.ipLimit),
+      'x-ratelimit-remaining': '0',
+      'x-ratelimit-mode': rate.mode,
+    };
+    if (rate.resetMs) headers['x-ratelimit-reset'] = String(Math.ceil(rate.resetMs / 1000));
+    logLine({
+      s: 'blocked', r: rate.reason, m: method, p: endpoint, ip, b: bot.score, sigs: bot.signals.join(','), rl: rate.mode,
+    });
+    return denyResponse(rbPack.CODE_STATUS.RATE_LIMITED, 'RATE_LIMITED', null, headers);
+  }
+
+  /* fail-open saat Redis tak tersedia: sinyal eksplisit via header,
+     tanpa klaim perlindungan global */
+  if (rate.reason === 'rate_limiting_unconfigured' || rate.reason === 'rate_limiting_degraded' || rate.reason === 'redis_error') {
+    logLine({ s: 'open', r: rate.reason, m: method, p: endpoint, ip, b: bot.score, rl: rate.mode });
+  } else {
+    logLine({ s: 'pass', m: method, p: endpoint, ip, b: bot.score, rl: rate.mode, ms: Date.now() - ingressMs });
+  }
+
+  /* --- F. header keamanan + info limit → lewatkan ke endpoint ------ */
+  const passHeaders = new Headers(SECURITY_HEADERS);
+  passHeaders.set('x-ratelimit-mode', rate.mode);
+  if (rate.remaining !== null && rate.remaining !== undefined) {
+    passHeaders.set('x-ratelimit-limit', String(rl.CONFIG.ipLimit));
+    passHeaders.set('x-ratelimit-remaining', String(rate.remaining));
+    passHeaders.set('x-ratelimit-reset', String(Math.ceil((rate.resetMs || 0) / 1000)));
+  }
+  return next({ headers: passHeaders });
 }
 
+/* limit sungguhan (bukan status fail-open) */
+function isGenuineLimit(rate) {
+  if (!rate.limited || rate.blocked) return rate.blocked === true;
+  return (
+    rate.reason === 'ip_limit' ||
+    rate.reason === 'endpoint_limit' ||
+    rate.reason === 'cooldown' ||
+    rate.reason === 'temporary_block'
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Kontrak middleware Vercel: hanya /api/:path*                        */
+/* ------------------------------------------------------------------ */
+
 export const config = {
-  runtime: 'nodejs',
-  matcher: ['/api/:path*'],
+  matcher: '/api/:path*',
 };
