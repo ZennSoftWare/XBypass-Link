@@ -2,14 +2,9 @@
   "name": "xbypass",
   "version": "1.0.0",
   "private": true,
-  "description": "XBypass — frontend statis + engine bypass CommonJS untuk Vercel, dilengkapi infrastruktur backend (rate limiter Upstash, url validator SSRF, response handler, routing middleware).",
-  "license": "MIT",
-  "author": "Razeerh",
+  "description": "XBypass - API bypass dalam hitungan detik (backend Vercel Serverless, infrastruktur: middleware, rate limit, validasi URL, pengelolaan respons)",
   "engines": {
-    "node": "20.x || >=22.0.0"
-  },
-  "scripts": {
-    "check": "node --check lib/url-validator.js && node --check lib/rate-limit.js && node --check lib/response-handler.js"
+    "node": ">=18"
   },
   "dependencies": {
     "@upstash/ratelimit": "^2.2.0",
