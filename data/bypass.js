@@ -7,7 +7,7 @@ export const BYPASS_PROVIDERS = [
     id: "sub2unlock",
     name: "Sub2Unlock.me",
     domains: ["sub2unlock.me"],
-    endpoint: "/api/engine/bypass-sub2unlock-me",
+    endpoint: "/api/bypass-sub2unlock-me",
     processingLabel: "Sub2Unlock-me",
     icon: "/assets/logo-bypass/sub2unlock.webp",
     enabled: true
@@ -16,7 +16,7 @@ export const BYPASS_PROVIDERS = [
     id: "sub2unlock",
     name: "Sub2Unlock.io",
     domains: ["sub2unlock.io"],
-    endpoint: "/api/engine/bypass-sub2unlock-io",
+    endpoint: "/api/bypass-sub2unlock-io",
     processingLabel: "Sub2Unlock-io",
     icon: "/assets/logo-bypass/sub2unlock-io.png",
     enabled: true
@@ -25,7 +25,7 @@ export const BYPASS_PROVIDERS = [
     id: "Bicolink",
     name: "Bicolink.com",
     domains: ["bicolink.com"],
-    endpoint: "/api/engine/bypass-bicolink",
+    endpoint: "/api/bypass-bicolink",
     processingLabel: "Bicolink",
     icon: "/assets/logo-bypass/bicolink.jpg",
     enabled: true
@@ -34,7 +34,7 @@ export const BYPASS_PROVIDERS = [
     id: "pastelink",
     name: "pastelink.net",
     domains: ["pastelink.net"],
-    endpoint: "/api/engine/bypass-pastelink-net",
+    endpoint: "/api/bypass-pastelink-net",
     processingLabel: "Pastelink",
     icon: "/assets/logo-bypass/pastelink.png",
     enabled: true
@@ -43,7 +43,7 @@ export const BYPASS_PROVIDERS = [
     id: "Pastelink",
     name: "Pastelink.id",
     domains: ["pastelink.id"],
-    endpoint: "/api/engine/bypass-pastelink-id",
+    endpoint: "/api/bypass-pastelink-id",
     processingLabel: "Pastelink-id",
     icon: "/assets/logo-bypass/pastelink-id.png",
     enabled: true
@@ -51,8 +51,8 @@ export const BYPASS_PROVIDERS = [
   {
     id: "shrinkme",
     name: "shrinkme.io",
-    domains: ["shrinkme.io"],
-    endpoint: "/api/engine/bypass-shrinkme",
+    domains: ["shrinkme.io", "shrinkme.click", "shrinkme.ink"],
+    endpoint: "/api/bypass-shrinkme",
     processingLabel: "Shrinkme",
     icon: "/assets/logo-bypass/shrinkme.jpg",
     enabled: true
@@ -60,8 +60,8 @@ export const BYPASS_PROVIDERS = [
   {
     id: "safelinku",
     name: "SFL",
-    domains: ["safelinku.com"],
-    endpoint: "/api/engine/bypass-sfl",
+    domains: ["safelinku.com", "sfl.gl"],
+    endpoint: "/api/bypass-sfl",
     processingLabel: "Safelinku",
     icon: "/assets/logo-bypass/safelinku.png",
     enabled: true
@@ -69,17 +69,17 @@ export const BYPASS_PROVIDERS = [
   {
     id: "linkvertise",
     name: "Linkvertise",
-    domains: ["linkvertise.com"],
-    endpoint: "/api/engine/bypass-linkvertise",
+    domains: ["linkvertise.com", "linkvertise.net"],
+    endpoint: "/api/bypass-linkvertise",
     processingLabel: "Linkvertise",
     icon: "/assets/logo-bypass/linkvertise.png",
-    enabled: true
+    enabled: false
   },
   {
     id: "subs4unlock",
     name: "Subs4unlock.id",
     domains: ["subs4unlock.id"],
-    endpoint: "/api/engine/bypass-subs4unlock-id",
+    endpoint: "/api/bypass-subs4unlock-id",
     processingLabel: "Subs4Unlock-id",
     icon: "/assets/logo-bypass/sub4unlock-id.webp",
     enabled: true
@@ -88,7 +88,7 @@ export const BYPASS_PROVIDERS = [
     id: "sub4unlock",
     name: "Sub4Unlock.com",
     domains: ["sub4unlock.com"],
-    endpoint: "/api/engine/bypass-sub4unlock-com",
+    endpoint: "/api/bypass-sub4unlock-com",
     processingLabel: "Sub4Unlock-pro",
     icon: "/assets/logo-bypass/sub4unlock-pro.png",
     enabled: true
@@ -97,7 +97,7 @@ export const BYPASS_PROVIDERS = [
     id: "subs4unlock",
     name: "Subs4Unlock.com",
     domains: ["subs4unlock.com"],
-    endpoint: "/api/engine/bypass-subs4unlock-com",
+    endpoint: "/api/bypass-subs4unlock-com",
     processingLabel: "Subs4Unlock",
     icon: "/assets/logo-bypass/sub4unlock.png",
     enabled: true
@@ -117,7 +117,7 @@ export const BYPASS_STAGES = {
 };
 
 export const BYPASS_SETTINGS = {
-  timeoutMs: 25000,     // batas waktu request
+  timeoutMs: 55000,     // batas waktu request (backend 48 dtk + toleransi)
   stepDelayMs: 280,     // jeda visual untuk tahap lokal (membaca & validasi)
   toastMs: 2600,
   maxDots: 56,          // batas partikel background
@@ -128,6 +128,7 @@ export const BYPASS_SETTINGS = {
 export const BYPASS_MESSAGES = {
   EMPTY_URL: "Link masih kosong. Tempel atau ketik link terlebih dahulu.",
   INVALID_URL: "Format link tidak valid. Gunakan alamat yang diawali http:// atau https://.",
+  INCOMPLETE_URL: "Link belum lengkap. Sertakan kode shortlink pada alamat.",
   UNSUPPORTED_DOMAIN: "Domain ini belum didukung. Cek daftar Bypass yang Didukung di bawah.",
   PROVIDER_DISABLED: "Provider untuk domain ini sedang dinonaktifkan.",
   API_UNAVAILABLE: "API belum terintegrasi untuk provider ini.",
@@ -139,5 +140,16 @@ export const BYPASS_MESSAGES = {
   NO_TARGET_URL: "Respons sukses, tetapi tidak berisi link tujuan.",
   INVALID_TARGET: "Link tujuan dari server bukan URL http/https yang valid.",
   BYPASS_FAILED: "URL gagal diproses.",
+  UNRESOLVED: "Link belum dapat dibuka otomatis oleh sistem.",
+  CAPTCHA_REQUIRED: "Halaman tujuan meminta captcha dan tidak dapat diproses otomatis.",
+  PASSWORD_REQUIRED: "Halaman tujuan terkunci kata sandi dan tidak dapat dibuka otomatis.",
+  INTERACTION_REQUIRED: "Link membutuhkan tindakan pengguna dan tidak dapat dibuka otomatis.",
+  VERIFICATION_REQUIRED: "Link membutuhkan verifikasi dan tidak dapat dibuka otomatis.",
+  LOCKED_DESTINATION: "Tautan tujuan masih terkunci sepenuhnya oleh provider.",
+  LINK_EXPIRED: "Link telah kedaluwarsa.",
+  NOT_FOUND: "Link tidak ditemukan atau sudah dihapus.",
+  CHAIN_UNSUPPORTED: "Bypass berhenti di shortlink perantara yang belum didukung.",
+  CHAIN_LIMIT: "Rantai shortlink terlalu panjang; link akhir belum diperoleh.",
+  CHAIN_LOOP: "Terdeteksi loop shortlink; link akhir belum diperoleh.",
   UNKNOWN: "Terjadi kesalahan tak terduga."
 };
